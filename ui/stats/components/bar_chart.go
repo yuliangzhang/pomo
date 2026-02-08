@@ -21,15 +21,16 @@ const (
 	lineChar    = "─"
 	paddingChar = " "
 
-	barThickness = 3
-	spacing      = 2
-	daysInWeek   = 7
+	minBarWidth = 3
+	spacing     = 2
+	daysInWeek  = 7
 )
 
 var spacer = strings.Repeat(paddingChar, spacing)
 
 type chartLayout struct {
 	barHeight       int
+	barWidth        int
 	yAxisLabelWidth int
 	yAxisWidth      int // label + space + tick char
 	barAreaWidth    int
@@ -48,7 +49,7 @@ func NewBarChart(height int) BarChart {
 	}
 }
 
-func (b *BarChart) calculateLayout(maxDuration, scale time.Duration) chartLayout {
+func (b *BarChart) calculateLayout(stats []db.DailyStat, maxDuration, scale time.Duration) chartLayout {
 	longestLabel := 0
 
 	for duration := maxDuration; duration > 0; duration -= scale {
@@ -56,13 +57,15 @@ func (b *BarChart) calculateLayout(maxDuration, scale time.Duration) chartLayout
 		longestLabel = max(longestLabel, len(label))
 	}
 
+	barWidth := getBarWidth(stats)
 	yAxisLabelWidth := longestLabel
 	yAxisWidth := yAxisLabelWidth + 1 + 1 // length of label + space + tick char
 
-	barAreaWidth := spacing + (barThickness+spacing)*daysInWeek
+	barAreaWidth := spacing + (barWidth+spacing)*daysInWeek
 
 	return chartLayout{
 		barHeight:       b.barHeight,
+		barWidth:        barWidth,
 		yAxisLabelWidth: yAxisLabelWidth,
 		yAxisWidth:      yAxisWidth,
 		barAreaWidth:    barAreaWidth,
@@ -87,7 +90,7 @@ func (b *BarChart) View(stats []db.DailyStat) string {
 		scale = time.Minute * 10
 	}
 
-	b.chartLayout = b.calculateLayout(maxDuration, scale)
+	b.chartLayout = b.calculateLayout(stats, maxDuration, scale)
 
 	yAxis := b.buildYAxis(maxDuration, scale)
 	bars := b.buildBars(stats, maxDuration)
@@ -106,19 +109,23 @@ func (b *BarChart) View(stats []db.DailyStat) string {
 
 func (b *BarChart) buildBars(stats []db.DailyStat, maxDuration time.Duration) string {
 	bars := make([]string, 0, len(stats))
+	totalRows := b.barHeight + 1 // extra row for value labels
 
 	for _, stat := range stats {
-		if stat.WorkDuration == 0 {
-			bars = append(bars, renderBar(0), spacer)
-			continue
+		barHeight := 0
+		if stat.WorkDuration > 0 {
+			barHeight = int((float64(stat.WorkDuration) / float64(maxDuration)) * float64(b.barHeight))
+			// Ensure any non-zero duration is visible in the chart.
+			if barHeight == 0 {
+				barHeight = 1
+			}
 		}
 
-		barHeight := int((float64(stat.WorkDuration) / float64(maxDuration)) * float64(b.barHeight))
-		bar := renderBar(barHeight)
+		bar := renderBar(totalRows, barHeight, b.barWidth, formatDurationLabel(stat.WorkDuration))
 		bars = append(bars, bar, spacer)
 	}
 
-	return lipgloss.JoinHorizontal(lipgloss.Bottom, bars...)
+	return lipgloss.JoinHorizontal(lipgloss.Top, bars...)
 }
 
 func (b *BarChart) buildYAxis(maxDuration, scale time.Duration) string {
@@ -153,7 +160,7 @@ func (b *BarChart) buildLabels(stats []db.DailyStat) string {
 	var labels strings.Builder
 
 	for _, stat := range stats {
-		day := getDayLabel(stat.Date)
+		day := getDayLabel(stat.Date, b.barWidth)
 		labels.WriteString(day)
 		labels.WriteString(spacer)
 	}
@@ -165,26 +172,95 @@ func (b *BarChart) buildLabels(stats []db.DailyStat) string {
 	return padding + labels.String()
 }
 
-func getDayLabel(day string) string {
+func getDayLabel(day string, width int) string {
 	t, err := time.Parse(db.DateFormat, day)
 	if err != nil {
-		return strings.Repeat(paddingChar, barThickness)
+		return strings.Repeat(paddingChar, width)
 	}
 
 	// get first three letters of weekday
-	return t.Weekday().String()[:barThickness]
+	return centerText(t.Weekday().String()[:3], width)
 }
 
-func renderBar(height int) string {
-	if height == 0 {
-		// return an empty bar for alignment
-		return strings.Repeat(paddingChar, barThickness)
+func renderBar(totalRows, barHeight, barWidth int, label string) string {
+	if totalRows <= 0 {
+		return ""
 	}
 
-	bar := strings.Repeat(barChar, barThickness)
+	blank := strings.Repeat(paddingChar, barWidth)
+	rows := make([]string, totalRows)
+	for i := range rows {
+		rows[i] = blank
+	}
 
-	// don't render last new line char
-	return barStyle.Render(strings.Repeat(bar+"\n", height-1) + bar)
+	if barHeight <= 0 {
+		// no work duration: render label on the last row (just above x-axis)
+		rows[totalRows-1] = centerText(label, barWidth)
+		return strings.Join(rows, "\n")
+	}
+
+	barHeight = min(barHeight, totalRows-1)
+	labelRow := totalRows - barHeight - 1
+	rows[labelRow] = centerText(label, barWidth)
+
+	filledRow := barStyle.Render(strings.Repeat(barChar, barWidth))
+	for i := labelRow + 1; i <= labelRow+barHeight && i < totalRows; i++ {
+		rows[i] = filledRow
+	}
+
+	return strings.Join(rows, "\n")
+}
+
+func getBarWidth(stats []db.DailyStat) int {
+	width := minBarWidth
+
+	for _, stat := range stats {
+		width = max(width, len(formatDurationLabel(stat.WorkDuration)))
+	}
+
+	return width
+}
+
+func formatDurationLabel(d time.Duration) string {
+	if d <= 0 {
+		return "0m"
+	}
+
+	if d < time.Minute {
+		seconds := int(d.Seconds())
+		if seconds == 0 {
+			seconds = 1
+		}
+		return fmt.Sprintf("%ds", seconds)
+	}
+
+	minutes := int(d.Minutes())
+	if minutes < 60 {
+		return fmt.Sprintf("%dm", minutes)
+	}
+
+	hours := minutes / 60
+	remainingMinutes := minutes % 60
+	if remainingMinutes == 0 {
+		return fmt.Sprintf("%dh", hours)
+	}
+
+	return fmt.Sprintf("%dh%dm", hours, remainingMinutes)
+}
+
+func centerText(text string, width int) string {
+	if width <= 0 {
+		return ""
+	}
+
+	if len(text) >= width {
+		return text[:width]
+	}
+
+	left := (width - len(text)) / 2
+	right := width - len(text) - left
+
+	return strings.Repeat(paddingChar, left) + text + strings.Repeat(paddingChar, right)
 }
 
 func getMaxDuration(stats []db.DailyStat) time.Duration {

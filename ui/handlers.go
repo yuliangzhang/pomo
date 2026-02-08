@@ -213,12 +213,20 @@ func (m *Model) recordSession() {
 	}
 
 	if err := m.repo.CreateSession(
-		time.Now(),
+		calculateSessionStartTime(time.Now(), m.elapsed),
 		m.elapsed,
 		db.GetSessionType(m.currentTaskType),
 	); err != nil {
 		log.Printf("failed to record session: %v", err)
 	}
+}
+
+func calculateSessionStartTime(now time.Time, elapsed time.Duration) time.Time {
+	if elapsed <= 0 {
+		return now
+	}
+
+	return now.Add(-elapsed)
 }
 
 func (m *Model) Quit() tea.Cmd {

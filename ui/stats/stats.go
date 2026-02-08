@@ -3,6 +3,8 @@ package stats
 
 import (
 	"errors"
+	"fmt"
+	"time"
 
 	"github.com/Bahaaio/pomo/db"
 	"github.com/Bahaaio/pomo/ui/colors"
@@ -124,6 +126,7 @@ func (m Model) View() string {
 	)
 
 	streak := m.streak.View(m.streakStats)
+	todayWork := buildTodayWorkLine(m.weeklyStats, time.Now())
 
 	chart := m.barChart.View(m.weeklyStats)
 	hMap := m.heatMap.View(m.monthlyStats)
@@ -138,6 +141,8 @@ func (m Model) View() string {
 			title,
 			"\n\n",
 			durationRatio,
+			"",
+			todayWork,
 			"",
 			streak,
 			"\n",
@@ -198,4 +203,45 @@ func handleKeys(msg tea.KeyMsg) tea.Cmd {
 		return tea.Quit
 	}
 	return nil
+}
+
+func buildTodayWorkLine(stats []db.DailyStat, now time.Time) string {
+	today := now.Format(db.DateFormat)
+
+	var todayDuration time.Duration
+	for _, stat := range stats {
+		if stat.Date == today {
+			todayDuration = stat.WorkDuration
+			break
+		}
+	}
+
+	return fmt.Sprintf("today work %s", formatDurationCompact(todayDuration))
+}
+
+func formatDurationCompact(d time.Duration) string {
+	if d <= 0 {
+		return "0m"
+	}
+
+	if d < time.Minute {
+		seconds := int(d.Seconds())
+		if seconds == 0 {
+			seconds = 1
+		}
+		return fmt.Sprintf("%ds", seconds)
+	}
+
+	hours := int(d.Hours())
+	minutes := int(d.Minutes()) % 60
+
+	if hours == 0 {
+		return fmt.Sprintf("%dm", int(d.Minutes()))
+	}
+
+	if minutes == 0 {
+		return fmt.Sprintf("%dh", hours)
+	}
+
+	return fmt.Sprintf("%dh%dm", hours, minutes)
 }

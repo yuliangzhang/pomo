@@ -82,6 +82,22 @@ View statistics:
 pomo stats        # View your productivity stats
 ```
 
+### Data Storage
+
+Session records are stored in a local SQLite database (not an online database):
+
+- **Linux/macOS**: `~/.local/state/pomo/pomo.db`
+- **Windows**: `%APPDATA%\\pomo\\pomo.db`
+
+To migrate data to another machine, copy this file to the same location on the target machine.
+
+Optional backup/export:
+
+```bash
+sqlite3 ~/.local/state/pomo/pomo.db ".backup ~/pomo-backup.db"
+sqlite3 ~/.local/state/pomo/pomo.db ".dump" > ~/pomo.sql
+```
+
 ## Installation
 
 ### Homebrew (macOS)
