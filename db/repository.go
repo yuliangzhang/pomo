@@ -1,6 +1,7 @@
 package db
 
 import (
+	"database/sql"
 	"time"
 
 	"github.com/jmoiron/sqlx"
@@ -27,6 +28,39 @@ func (r *SessionRepo) CreateSession(startedAt time.Time, duration time.Duration,
 		sessionType,
 	); err != nil {
 		return err
+	}
+
+	return nil
+}
+
+// ExtendLatestSession adds duration to the latest session of the same type.
+func (r *SessionRepo) ExtendLatestSession(duration time.Duration, sessionType SessionType) error {
+	result, err := r.db.Exec(
+		`
+		UPDATE sessions
+		SET duration = duration + ?
+		WHERE id = (
+			SELECT id
+			FROM sessions
+			WHERE type = ?
+			ORDER BY id DESC
+			LIMIT 1
+		);
+		`,
+		duration,
+		sessionType,
+	)
+	if err != nil {
+		return err
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+
+	if rowsAffected == 0 {
+		return sql.ErrNoRows
 	}
 
 	return nil

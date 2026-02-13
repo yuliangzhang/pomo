@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"database/sql"
+	"errors"
 	"log"
 	"time"
 
@@ -202,6 +204,7 @@ func (m *Model) recordSession() {
 	// short sessions extend the current session without incrementing the count
 	if m.isShortSession {
 		m.sessionSummary.AddDuration(m.currentTaskType, m.elapsed)
+		m.persistShortSession()
 		return
 	}
 
@@ -218,6 +221,32 @@ func (m *Model) recordSession() {
 		db.GetSessionType(m.currentTaskType),
 	); err != nil {
 		log.Printf("failed to record session: %v", err)
+	}
+}
+
+func (m *Model) persistShortSession() {
+	// return if no database is configured
+	if m.repo == nil {
+		return
+	}
+
+	sessionType := db.GetSessionType(m.currentTaskType)
+
+	// Short session extends the previous same-type session in persistent stats.
+	if err := m.repo.ExtendLatestSession(m.elapsed, sessionType); err == nil {
+		return
+	} else if !errors.Is(err, sql.ErrNoRows) {
+		log.Printf("failed to extend latest session: %v", err)
+		return
+	}
+
+	// Fallback for edge case where no previous same-type session exists.
+	if err := m.repo.CreateSession(
+		calculateSessionStartTime(time.Now(), m.elapsed),
+		m.elapsed,
+		sessionType,
+	); err != nil {
+		log.Printf("failed to record short session: %v", err)
 	}
 }
 
