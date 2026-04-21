@@ -19,13 +19,24 @@ func NewSessionRepo(db *sqlx.DB) *SessionRepo {
 
 // CreateSession inserts a new session record into the database.
 func (r *SessionRepo) CreateSession(startedAt time.Time, duration time.Duration, sessionType SessionType) error {
+	return r.CreateSessionWithSource(startedAt, duration, sessionType, ScreenSource)
+}
+
+// CreateSessionWithSource inserts a new session record into the database with an explicit source.
+func (r *SessionRepo) CreateSessionWithSource(
+	startedAt time.Time,
+	duration time.Duration,
+	sessionType SessionType,
+	source SessionSource,
+) error {
 	startedAtStr := startedAt.Format(time.RFC3339)
 
 	if _, err := r.db.Exec(
-		"insert into sessions (started_at, duration, type) values (?, ?, ?);",
+		"insert into sessions (started_at, duration, type, source) values (?, ?, ?, ?);",
 		startedAtStr,
 		duration,
 		sessionType,
+		source,
 	); err != nil {
 		return err
 	}
@@ -35,6 +46,15 @@ func (r *SessionRepo) CreateSession(startedAt time.Time, duration time.Duration,
 
 // ExtendLatestSession adds duration to the latest session of the same type.
 func (r *SessionRepo) ExtendLatestSession(duration time.Duration, sessionType SessionType) error {
+	return r.ExtendLatestSessionBySource(duration, sessionType, ScreenSource)
+}
+
+// ExtendLatestSessionBySource adds duration to the latest session of the same type and source.
+func (r *SessionRepo) ExtendLatestSessionBySource(
+	duration time.Duration,
+	sessionType SessionType,
+	source SessionSource,
+) error {
 	result, err := r.db.Exec(
 		`
 		UPDATE sessions
@@ -42,13 +62,14 @@ func (r *SessionRepo) ExtendLatestSession(duration time.Duration, sessionType Se
 		WHERE id = (
 			SELECT id
 			FROM sessions
-			WHERE type = ?
+			WHERE type = ? AND source = ?
 			ORDER BY id DESC
 			LIMIT 1
 		);
 		`,
 		duration,
 		sessionType,
+		source,
 	)
 	if err != nil {
 		return err
@@ -76,7 +97,7 @@ func (r *SessionRepo) GetAllTimeStats() (AllTimeStats, error) {
 		`
 		SELECT
 			COUNT(*) AS total_sessions,
-			COALESCE(SUM(duration * (type = 'work')), 0)  AS total_work_duration,
+			COALESCE(SUM(duration * (type = 'work')), 0) AS total_work_duration,
 			COALESCE(SUM(duration * (type = 'break')), 0) AS total_break_duration
 		FROM sessions;
 		`,
@@ -137,6 +158,8 @@ func (r *SessionRepo) getDailyStats(from, to time.Time) ([]DailyStat, error) {
 		`
 		SELECT
 			date(started_at, 'localtime') AS day,
+			COALESCE(SUM(duration * (type = 'work' AND source = 'screen')), 0) AS screen_work_duration,
+			COALESCE(SUM(duration * (type = 'work' AND source = 'other')), 0) AS other_work_duration,
 			COALESCE(SUM(duration * (type = 'work')), 0) AS work_duration
 		FROM sessions
 		WHERE date(started_at, 'localtime') BETWEEN ? AND ?
@@ -165,8 +188,10 @@ func (r *SessionRepo) normalizeStats(from, to time.Time, stats []DailyStat) []Da
 		day := current.Format(DateFormat)
 
 		normalized = append(normalized, DailyStat{
-			Date:         day,
-			WorkDuration: m[day].WorkDuration,
+			Date:               day,
+			ScreenWorkDuration: m[day].ScreenWorkDuration,
+			OtherWorkDuration:  m[day].OtherWorkDuration,
+			WorkDuration:       m[day].WorkDuration,
 		})
 
 		current = current.AddDate(0, 0, 1) // next day

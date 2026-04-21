@@ -57,3 +57,33 @@ func TestExtendLatestSession_NoRows(t *testing.T) {
 		t.Fatalf("error = %v, want %v", err, sql.ErrNoRows)
 	}
 }
+
+func TestGetDailyStats_SplitsScreenAndOther(t *testing.T) {
+	repo := newTestRepo(t)
+	day := time.Date(2026, 2, 14, 9, 0, 0, 0, time.Local)
+
+	if err := repo.CreateSessionWithSource(day, time.Hour, WorkSession, ScreenSource); err != nil {
+		t.Fatalf("create screen session: %v", err)
+	}
+	if err := repo.CreateSessionWithSource(day, 27*time.Minute, WorkSession, OtherSource); err != nil {
+		t.Fatalf("create other session: %v", err)
+	}
+
+	stats, err := repo.getDailyStats(day, day)
+	if err != nil {
+		t.Fatalf("get daily stats: %v", err)
+	}
+	if len(stats) != 1 {
+		t.Fatalf("expected 1 stat row, got %d", len(stats))
+	}
+
+	if stats[0].ScreenWorkDuration != time.Hour {
+		t.Fatalf("screen duration = %v, want %v", stats[0].ScreenWorkDuration, time.Hour)
+	}
+	if stats[0].OtherWorkDuration != 27*time.Minute {
+		t.Fatalf("other duration = %v, want %v", stats[0].OtherWorkDuration, 27*time.Minute)
+	}
+	if stats[0].WorkDuration != (time.Hour + 27*time.Minute) {
+		t.Fatalf("work duration = %v, want %v", stats[0].WorkDuration, time.Hour+27*time.Minute)
+	}
+}

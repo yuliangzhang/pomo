@@ -208,15 +208,24 @@ func handleKeys(msg tea.KeyMsg) tea.Cmd {
 func buildTodayWorkLine(stats []db.DailyStat, now time.Time) string {
 	today := now.Format(db.DateFormat)
 
-	var todayDuration time.Duration
+	var total time.Duration
+	var screen time.Duration
+	var other time.Duration
 	for _, stat := range stats {
 		if stat.Date == today {
-			todayDuration = stat.WorkDuration
+			total = stat.WorkDuration
+			screen = stat.ScreenWorkDuration
+			other = stat.OtherWorkDuration
 			break
 		}
 	}
 
-	return fmt.Sprintf("today work %s", formatDurationCompact(todayDuration))
+	return fmt.Sprintf(
+		"today work total %s · screen %s · other %s",
+		formatDurationCompact(total),
+		formatDurationCompact(screen),
+		formatDurationCompact(other),
+	)
 }
 
 func formatDurationCompact(d time.Duration) string {

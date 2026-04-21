@@ -24,7 +24,7 @@ A simple, customizable Pomodoro timer for your terminal, built with [Bubble Tea]
 Track your productivity with `pomo stats`:
 
 - **Duration ratio** — total work vs break time
-- **Weekly bar chart** — daily work hours for the past 7 days
+- **Weekly bar chart** — daily work hours for the past 7 days (`screen` + `other`)
 - **4-month heatmap** — GitHub-style activity visualization
 
 > Heatmap icons require a [Nerd Font](https://www.nerdfonts.com/)
@@ -80,6 +80,12 @@ View statistics:
 
 ```bash
 pomo stats        # View your productivity stats
+```
+
+Add non-screen work time manually:
+
+```bash
+pomo add 27m      # Add 27 minutes as manual ("other") work time
 ```
 
 ### Data Storage

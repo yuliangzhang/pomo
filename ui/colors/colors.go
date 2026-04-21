@@ -38,8 +38,9 @@ const (
 	HeatMapFg4 = PurplePale
 
 	// Session types
-	WorkSessionFg  = Purple
-	BreakSessionFg = NoColor
+	WorkSessionFg      = Purple
+	OtherWorkSessionFg = Blue
+	BreakSessionFg     = NoColor
 
 	// Buttons
 	InactiveButtonFg = Cream

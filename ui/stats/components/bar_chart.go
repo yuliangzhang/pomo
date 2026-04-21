@@ -3,6 +3,7 @@ package components
 
 import (
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
@@ -11,7 +12,10 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-var barStyle = lipgloss.NewStyle().Foreground(colors.WorkSessionFg)
+var (
+	screenBarStyle = lipgloss.NewStyle().Foreground(colors.WorkSessionFg)
+	otherBarStyle  = lipgloss.NewStyle().Foreground(colors.OtherWorkSessionFg)
+)
 
 const (
 	barChar     = "█"
@@ -121,7 +125,18 @@ func (b *BarChart) buildBars(stats []db.DailyStat, maxDuration time.Duration) st
 			}
 		}
 
-		bar := renderBar(totalRows, barHeight, b.barWidth, formatDurationLabel(stat.WorkDuration))
+		screenBarHeight, otherBarHeight := splitBarHeights(
+			stat.ScreenWorkDuration,
+			stat.OtherWorkDuration,
+			barHeight,
+		)
+		bar := renderBar(
+			totalRows,
+			screenBarHeight,
+			otherBarHeight,
+			b.barWidth,
+			formatDurationLabel(stat.WorkDuration),
+		)
 		bars = append(bars, bar, spacer)
 	}
 
@@ -182,7 +197,7 @@ func getDayLabel(day string, width int) string {
 	return centerText(t.Weekday().String()[:3], width)
 }
 
-func renderBar(totalRows, barHeight, barWidth int, label string) string {
+func renderBar(totalRows, screenHeight, otherHeight, barWidth int, label string) string {
 	if totalRows <= 0 {
 		return ""
 	}
@@ -193,22 +208,64 @@ func renderBar(totalRows, barHeight, barWidth int, label string) string {
 		rows[i] = blank
 	}
 
-	if barHeight <= 0 {
+	totalBarHeight := screenHeight + otherHeight
+	if totalBarHeight <= 0 {
 		// no work duration: render label on the last row (just above x-axis)
 		rows[totalRows-1] = centerText(label, barWidth)
 		return strings.Join(rows, "\n")
 	}
 
-	barHeight = min(barHeight, totalRows-1)
-	labelRow := totalRows - barHeight - 1
+	totalBarHeight = min(totalBarHeight, totalRows-1)
+	labelRow := totalRows - totalBarHeight - 1
 	rows[labelRow] = centerText(label, barWidth)
 
-	filledRow := barStyle.Render(strings.Repeat(barChar, barWidth))
-	for i := labelRow + 1; i <= labelRow+barHeight && i < totalRows; i++ {
-		rows[i] = filledRow
+	screenRow := screenBarStyle.Render(strings.Repeat(barChar, barWidth))
+	otherRow := otherBarStyle.Render(strings.Repeat(barChar, barWidth))
+
+	// other (manual) fills from the bottom, screen is stacked above it.
+	bottom := totalRows - 1
+	for i := 0; i < otherHeight && bottom-i > labelRow; i++ {
+		rows[bottom-i] = otherRow
+	}
+
+	otherTop := bottom - otherHeight
+	for i := 0; i < screenHeight && otherTop-i > labelRow; i++ {
+		rows[otherTop-i] = screenRow
 	}
 
 	return strings.Join(rows, "\n")
+}
+
+func splitBarHeights(screenDuration, otherDuration time.Duration, totalHeight int) (int, int) {
+	if totalHeight <= 0 {
+		return 0, 0
+	}
+
+	if screenDuration <= 0 && otherDuration <= 0 {
+		return totalHeight, 0
+	}
+
+	if otherDuration <= 0 {
+		return totalHeight, 0
+	}
+
+	if screenDuration <= 0 {
+		return 0, totalHeight
+	}
+
+	totalDuration := screenDuration + otherDuration
+	otherHeight := int(math.Round(float64(otherDuration) / float64(totalDuration) * float64(totalHeight)))
+
+	// make both sources visible when both are non-zero
+	if otherHeight <= 0 {
+		otherHeight = 1
+	}
+	if otherHeight >= totalHeight {
+		otherHeight = totalHeight - 1
+	}
+
+	screenHeight := totalHeight - otherHeight
+	return screenHeight, otherHeight
 }
 
 func getBarWidth(stats []db.DailyStat) int {

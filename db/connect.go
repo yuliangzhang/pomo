@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 
 	"github.com/Bahaaio/pomo/config"
 	"github.com/jmoiron/sqlx"
@@ -64,7 +65,44 @@ func createSchema(db *sqlx.DB) error {
 	}
 	log.Println("created the schema")
 
+	// migration: add source column for distinguishing screen vs manual durations
+	if !tableHasColumn(db, "sessions", "source") {
+		if _, err := db.Exec(`ALTER TABLE sessions ADD COLUMN source TEXT NOT NULL DEFAULT 'screen';`); err != nil {
+			return err
+		}
+	}
+
 	return nil
+}
+
+func tableHasColumn(db *sqlx.DB, tableName, columnName string) bool {
+	query := "PRAGMA table_info(" + tableName + ");"
+	rows, err := db.Queryx(query)
+	if err != nil {
+		return false
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var (
+			cid      int
+			name     string
+			colType  string
+			notNull  int
+			defaultV *string
+			primaryK int
+		)
+
+		if err := rows.Scan(&cid, &name, &colType, &notNull, &defaultV, &primaryK); err != nil {
+			return false
+		}
+
+		if strings.EqualFold(name, columnName) {
+			return true
+		}
+	}
+
+	return false
 }
 
 // returns the path to the db directory
